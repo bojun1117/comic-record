@@ -21,6 +21,7 @@ type CategoryFilter = 'all' | MangaCategory
 
 const activeStatus = ref<StatusFilter>('all')
 const activeCategory = ref<CategoryFilter>('all')
+const searchQuery = ref('')
 
 const STATUS_FILTERS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
   { value: 'all', label: '全部' },
@@ -45,11 +46,15 @@ const sortedMangas = computed(() =>
   ),
 )
 
+const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase())
+
 const visibleMangas = computed(() =>
   sortedMangas.value.filter((m) => {
     const statusOk = activeStatus.value === 'all' || m.status === activeStatus.value
     const categoryOk = activeCategory.value === 'all' || m.category === activeCategory.value
-    return statusOk && categoryOk
+    const queryOk =
+      normalizedQuery.value === '' || m.title.toLowerCase().includes(normalizedQuery.value)
+    return statusOk && categoryOk && queryOk
   }),
 )
 
@@ -108,6 +113,31 @@ function logout() {
           登出
         </button>
       </div>
+    </div>
+
+    <!-- 搜尋 -->
+    <div class="mb-3">
+      <label class="relative block">
+        <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">
+          🔍
+        </span>
+        <input
+          v-model="searchQuery"
+          type="search"
+          placeholder="搜尋漫畫名稱..."
+          aria-label="搜尋漫畫名稱"
+          class="w-full rounded-md border border-neutral-300 bg-white py-2 pl-9 pr-9 text-[14px] text-neutral-800 placeholder-neutral-400 transition focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500"
+        />
+        <button
+          v-if="searchQuery"
+          type="button"
+          aria-label="清除搜尋"
+          class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600"
+          @click="searchQuery = ''"
+        >
+          ✕
+        </button>
+      </label>
     </div>
 
     <!-- 狀態篩選 -->
@@ -175,6 +205,9 @@ function logout() {
       >
         <p v-if="mangas.length === 0" class="text-sm text-neutral-500">
           還沒有任何漫畫,點右上「＋ 新增漫畫」開始記錄。
+        </p>
+        <p v-else-if="normalizedQuery !== ''" class="text-sm text-neutral-500">
+          沒有符合「{{ searchQuery.trim() }}」的漫畫。
         </p>
         <p v-else class="text-sm text-neutral-500">這個篩選條件下沒有漫畫。</p>
       </div>
