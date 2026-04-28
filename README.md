@@ -2,12 +2,15 @@
 
 > 個人用的漫畫追蹤工具 — 記錄每部漫畫的進度（卷／話）與追完後的推薦指數。
 
-![Status](https://img.shields.io/badge/status-MVP%20ready-brightgreen)
+![Status](https://img.shields.io/badge/status-deployed-brightgreen)
 ![Frontend](https://img.shields.io/badge/frontend-Vue%203%20%2B%20Vite-42b883)
 ![Backend](https://img.shields.io/badge/backend-AWS%20Lambda%20%2B%20DynamoDB-ff9900)
 ![Auth](https://img.shields.io/badge/auth-JWT%20(HS256)-4b5563)
+![Deploy](https://img.shields.io/badge/deploy-GitHub%20Pages-222)
 
 單人使用、多裝置同步（電腦／手機），單一密碼登入。資料存於 AWS DynamoDB，重新整理不會消失。
+
+🔗 **線上版**：[https://bojun1117.github.io/comic-record/](https://bojun1117.github.io/comic-record/)
 
 ---
 
@@ -26,17 +29,24 @@
 ## 系統架構
 
 ```
-┌──────────────┐      HTTPS       ┌─────────────────┐      ┌───────────┐
-│   Browser    │ ───────────────► │   API Gateway   │ ───► │  Lambda   │
-│  (Vue 3 SPA) │ ◄─────────────── │   (REST, CORS)  │ ◄─── │  Node 22  │
-└──────────────┘    JSON + JWT    └─────────────────┘      └─────┬─────┘
-                                                                  │
-                                                          ┌───────┴────────┐
-                                                          │                │
-                                                    ┌─────▼─────┐   ┌──────▼──────┐
-                                                    │ DynamoDB  │   │ SSM Param   │
-                                                    │  (mangas) │   │  (secrets)  │
-                                                    └───────────┘   └─────────────┘
+   ┌──────────────┐         ┌──────────────────┐
+   │ GitHub Pages │ ◄─────  │  GitHub Actions  │  ◄── git push main
+   │  (Vue SPA)   │  build  │  (CI/CD)         │
+   └──────┬───────┘         └──────────────────┘
+          │ HTTPS + JWT
+          ▼
+   ┌──────────────────┐       ┌────────────┐
+   │   API Gateway    │ ────► │   Lambda   │
+   │ (REST, CORS      │ ◄──── │  Node 22   │
+   │  allowlist)      │       │  ARM64     │
+   └──────────────────┘       └─────┬──────┘
+                                    │
+                          ┌─────────┴─────────┐
+                          ▼                   ▼
+                    ┌──────────┐      ┌──────────────┐
+                    │ DynamoDB │      │ SSM Param    │
+                    │ (mangas) │      │  (secrets)   │
+                    └──────────┘      └──────────────┘
 ```
 
 ---
@@ -50,6 +60,8 @@
 | Database | DynamoDB (PAY_PER_REQUEST) |
 | Auth | JWT (HS256) via `jose`、AWS SSM Parameter Store (SecureString) |
 | IaC | AWS CDK v2 (TypeScript) |
+| Hosting | GitHub Pages（前端）、AWS（後端） |
+| CI/CD | GitHub Actions（push main 自動部署前端） |
 | Tooling | ESLint、Prettier、vue-tsc、vitest |
 
 完整選型理由與排除項目請見 [`docs/TECH_STACK.md`](docs/TECH_STACK.md)。
@@ -60,7 +72,10 @@
 
 ```
 comic-record/
+├── .github/workflows/ # GitHub Actions（前端自動部署）
 ├── comic-vibe/        # 前端 SPA (Vue 3 + Vite)
+│   ├── public/
+│   │   └── 404.html   # GitHub Pages SPA fallback
 │   ├── src/
 │   │   ├── api/       # HTTP client 與端點封裝
 │   │   ├── components/
@@ -115,6 +130,33 @@ npm run dev
 
 ---
 
+## 部署
+
+### 前端（自動）
+
+push 到 `main` 分支即觸發 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)：
+
+```
+git push   # → GitHub Actions 自動 build + 部署到 GitHub Pages（約 2–3 分鐘）
+```
+
+workflow 步驟：`checkout → npm ci → type-check → vite build → upload artifact → deploy-pages`。
+build 時注入 `VITE_BASE_PATH=/comic-record/`，API URL 來自 `comic-vibe/.env.production`。
+
+### 後端（手動）
+
+CDK 部署刻意不入 CI，避免 Lambda／DynamoDB 改錯影響大：
+
+```bash
+cd infra
+npm run diff       # 先看異動
+npm run deploy
+```
+
+完整流程與驗收步驟見 [`docs/DEPLOY.md`](docs/DEPLOY.md)。
+
+---
+
 ## 常用指令
 
 ```bash
@@ -158,6 +200,7 @@ aws logs tail /aws/lambda/comic-vibe-list-mangas-dev --follow
 | [`docs/API.md`](docs/API.md) | REST API 完整 contract |
 | [`docs/AUTH.md`](docs/AUTH.md) | 密碼／JWT 機制與 secret 旋轉 |
 | [`docs/INFRA.md`](docs/INFRA.md) | CDK 部署、驗收與運維 |
+| [`docs/DEPLOY.md`](docs/DEPLOY.md) | 階段 5：GitHub Pages + CORS 收緊與多裝置驗收 |
 | [`docs/AWS_SETUP.md`](docs/AWS_SETUP.md) | AWS 帳號／CLI／billing alert 初始設定 |
 | [`docs/TASKS.md`](docs/TASKS.md) | 開發階段任務拆解 |
 
@@ -172,7 +215,7 @@ aws logs tail /aws/lambda/comic-vibe-list-mangas-dev --follow
 | 2 | ✅ | 反推 API contract |
 | 3 | ✅ | AWS CDK 部署：Lambda + DynamoDB + API Gateway |
 | 4 | ✅ | 前後端串接、密碼登入（JWT 30 天） |
-| 5 | 規劃中 | 部署到正式 domain（Cloudflare Pages / GitHub Pages） |
+| 5 | ✅ | GitHub Pages 部署、CORS 收緊到 allowlist、CI/CD 自動化 |
 
 ---
 
