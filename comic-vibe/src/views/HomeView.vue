@@ -8,6 +8,7 @@ import { useMangaStore } from '@/stores/manga'
 import MangaCard from '@/components/MangaCard.vue'
 import AddMangaModal from '@/components/AddMangaModal.vue'
 import AppToast from '@/components/AppToast.vue'
+import RecommendBlock from '@/components/RecommendBlock.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -261,6 +262,9 @@ function logout() {
           </p>
         </div>
       </section>
+
+      <!-- AI 推薦 block -->
+      <RecommendBlock />
     </template>
 
     <AddMangaModal
