@@ -117,6 +117,14 @@ export class ComicVibeStack extends Stack {
       functionName: `comic-vibe-delete-manga-${stage}`,
     })
 
+    // 推薦 Lambda 呼 Bedrock,timeout 拉長到 30s(LLM 反應有時較慢)
+    const recommendFn = new NodejsFunction(this, 'RecommendFn', {
+      ...commonLambdaProps,
+      entry: path.join(lambdaDir, 'recommend.ts'),
+      functionName: `comic-vibe-recommend-${stage}`,
+      timeout: Duration.seconds(30),
+    })
+
     // DynamoDB 權限
     table.grantReadData(listFn)
     table.grantReadWriteData(createFn)
@@ -129,7 +137,18 @@ export class ComicVibeStack extends Stack {
       jwtSecretParam.grantRead(fn)
     }
     jwtSecretParam.grantRead(loginFn)
+    jwtSecretParam.grantRead(recommendFn)
     passwordParam.grantRead(loginFn)
+
+    // Bedrock 權限:只給 recommend Lambda,只允許 InvokeModel
+    recommendFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['bedrock:InvokeModel'],
+        resources: [
+          `arn:aws:bedrock:${this.region}::foundation-model/anthropic.claude-haiku-4-5-*`,
+        ],
+      }),
+    )
 
     // SecureString 解密用的 KMS 權限(預設用 AWS managed key,grantRead 已包含)
     // 但 fromSecureStringParameterAttributes 不帶 kms decrypt,要顯式加
@@ -146,7 +165,7 @@ export class ComicVibeStack extends Stack {
         },
       },
     })
-    for (const fn of [...mangaFns, loginFn]) {
+    for (const fn of [...mangaFns, loginFn, recommendFn]) {
       fn.addToRolePolicy(kmsDecrypt)
     }
 
@@ -177,6 +196,9 @@ export class ComicVibeStack extends Stack {
     const mangaById = mangas.addResource('{id}')
     mangaById.addMethod('PATCH', new apigw.LambdaIntegration(updateFn))
     mangaById.addMethod('DELETE', new apigw.LambdaIntegration(deleteFn))
+
+    const recommendations = api.root.addResource('recommendations')
+    recommendations.addMethod('POST', new apigw.LambdaIntegration(recommendFn))
 
     new CfnOutput(this, 'ApiUrl', {
       value: api.url,
