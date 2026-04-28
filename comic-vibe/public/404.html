@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8" />
+    <title>Comic Vibe</title>
+    <script>
+      // SPA on GitHub Pages — 把 404 路徑塞進 query string,
+      // 由 index.html 上的還原腳本解開,讓 vue-router 接管。
+      // 來源:https://github.com/rafgraph/spa-github-pages
+      // pathSegmentsToKeep = 1 因為部署在 /comic-record/ 子路徑
+      var pathSegmentsToKeep = 1
+      var l = window.location
+      l.replace(
+        l.protocol +
+          '//' +
+          l.hostname +
+          (l.port ? ':' + l.port : '') +
+          l.pathname
+            .split('/')
+            .slice(0, 1 + pathSegmentsToKeep)
+            .join('/') +
+          '/?/' +
+          l.pathname
+            .slice(1)
+            .split('/')
+            .slice(pathSegmentsToKeep)
+            .join('/')
+            .replace(/&/g, '~and~') +
+          (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+          l.hash,
+      )
+    </script>
+  </head>
+  <body></body>
+</html>

@@ -4,7 +4,9 @@ import HomeView from '@/views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 
 const router = createRouter({
-  history: createWebHistory(),
+  // BASE_URL 自動從 vite.config.ts 的 base 取得
+  // dev 時 = '/',production build = '/comic-record/'
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/login',
@@ -23,15 +25,12 @@ const router = createRouter({
 router.beforeEach((to) => {
   const auth = useAuthStore()
 
-  // 已登入又跳到 login → 直接回首頁
   if (to.name === 'login' && auth.isAuthenticated) {
     return { name: 'home' }
   }
 
-  // 不需要登入的頁面(目前只有 login)→ 放行
   if (to.meta.public) return true
 
-  // 需要登入但沒 token → 踢去 login,記下原本想去的地方
   if (!auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
