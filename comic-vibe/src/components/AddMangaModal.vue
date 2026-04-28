@@ -5,6 +5,8 @@ import { useMangaStore, type AddMangaInput } from '@/stores/manga'
 
 const props = defineProps<{
   open: boolean
+  // 鎖定 status:不顯示下拉、強制使用此值新增。給「他人推薦」入口用。
+  lockStatus?: MangaStatus
 }>()
 
 const emit = defineEmits<{
@@ -38,12 +40,14 @@ const CATEGORY_OPTIONS: ReadonlyArray<{ value: MangaCategory; label: string }> =
 ]
 
 const isCompleted = computed(() => status.value === 'completed')
+const isPlanToRead = computed(() => status.value === 'plan-to-read')
 const titleTrimmed = computed(() => title.value.trim())
 const canSubmit = computed(() => titleTrimmed.value.length > 0 && !submitting.value)
+const dialogTitle = computed(() => (props.lockStatus === 'plan-to-read' ? '加入想看' : '新增漫畫'))
 
 function reset() {
   title.value = ''
-  status.value = 'plan-to-read'
+  status.value = props.lockStatus ?? 'plan-to-read'
   category.value = 'other'
   volumeStr.value = ''
   chapterStr.value = ''
@@ -123,7 +127,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         aria-modal="true"
         class="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-6 shadow-xl"
       >
-        <h2 class="m-0 text-lg font-semibold text-neutral-900">新增漫畫</h2>
+        <h2 class="m-0 text-lg font-semibold text-neutral-900">{{ dialogTitle }}</h2>
 
         <div class="mt-5 space-y-4">
           <!-- 書名 -->
@@ -142,8 +146,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             />
           </div>
 
-          <!-- status -->
-          <div>
+          <!-- status:鎖定時(他人推薦入口)隱藏,強制 lockStatus -->
+          <div v-if="!lockStatus">
             <label for="add-status" class="block text-[13px] font-medium text-neutral-700">
               狀態
             </label>
@@ -174,8 +178,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </select>
           </div>
 
-          <!-- 非 completed:卷 / 話 -->
-          <div v-if="!isCompleted" class="grid grid-cols-2 gap-3">
+          <!-- 非 completed 且非 plan-to-read:卷 / 話 -->
+          <div v-if="!isCompleted && !isPlanToRead" class="grid grid-cols-2 gap-3">
             <div>
               <label for="add-vol" class="block text-[13px] font-medium text-neutral-700">
                 卷(可空)
@@ -207,7 +211,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           </div>
 
           <!-- completed:評分 -->
-          <div v-else>
+          <div v-else-if="isCompleted">
             <label class="block text-[13px] font-medium text-neutral-700">
               推薦指數(可空)
             </label>

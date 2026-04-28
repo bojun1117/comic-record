@@ -15,8 +15,10 @@ const store = useMangaStore()
 const { mangas, loading, loaded, lastError } = storeToRefs(store)
 
 const addModalOpen = ref(false)
+const wishlistModalOpen = ref(false)
 
-type StatusFilter = 'all' | MangaStatus
+// 排除 plan-to-read:想看獨立到「他人推薦」block,主 grid 不顯示
+type StatusFilter = 'all' | Exclude<MangaStatus, 'plan-to-read'>
 type CategoryFilter = 'all' | MangaCategory
 
 const activeStatus = ref<StatusFilter>('all')
@@ -25,7 +27,6 @@ const searchQuery = ref('')
 
 const STATUS_FILTERS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
   { value: 'all', label: '全部' },
-  { value: 'plan-to-read', label: '想看' },
   { value: 'reading', label: '追讀中' },
   { value: 'dropped', label: '棄追' },
   { value: 'completed', label: '已追完' },
@@ -48,14 +49,26 @@ const sortedMangas = computed(() =>
 
 const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase())
 
+// 共用條件:分類 chips + 搜尋,套用到「我的漫畫」與「他人推薦」兩 block
+function matchesSharedFilters(m: { title: string; category: MangaCategory }): boolean {
+  const categoryOk = activeCategory.value === 'all' || m.category === activeCategory.value
+  const queryOk =
+    normalizedQuery.value === '' || m.title.toLowerCase().includes(normalizedQuery.value)
+  return categoryOk && queryOk
+}
+
+// 主 grid:排除 plan-to-read,加 status chips
 const visibleMangas = computed(() =>
   sortedMangas.value.filter((m) => {
+    if (m.status === 'plan-to-read') return false
     const statusOk = activeStatus.value === 'all' || m.status === activeStatus.value
-    const categoryOk = activeCategory.value === 'all' || m.category === activeCategory.value
-    const queryOk =
-      normalizedQuery.value === '' || m.title.toLowerCase().includes(normalizedQuery.value)
-    return statusOk && categoryOk && queryOk
+    return statusOk && matchesSharedFilters(m)
   }),
+)
+
+// 他人推薦 block:只 plan-to-read,不受 status chips 影響
+const wishlistMangas = computed(() =>
+  sortedMangas.value.filter((m) => m.status === 'plan-to-read' && matchesSharedFilters(m)),
 )
 
 const stats = computed(() => {
@@ -63,7 +76,8 @@ const stats = computed(() => {
   const reading = mangas.value.filter((m) => m.status === 'reading').length
   const completed = mangas.value.filter((m) => m.status === 'completed').length
   const dropped = mangas.value.filter((m) => m.status === 'dropped').length
-  return { total, reading, completed, dropped }
+  const planToRead = mangas.value.filter((m) => m.status === 'plan-to-read').length
+  return { total, reading, completed, dropped, planToRead }
 })
 
 onMounted(async () => {
@@ -94,7 +108,7 @@ function logout() {
         <h1 class="m-0 text-2xl font-semibold text-neutral-900">我的漫畫</h1>
         <p class="mt-1 text-[13px] text-neutral-500">
           共 {{ stats.total }} 部 · 追讀中 {{ stats.reading }} · 已追完
-          {{ stats.completed }} · 棄追 {{ stats.dropped }}
+          {{ stats.completed }} · 棄追 {{ stats.dropped }} · 想看 {{ stats.planToRead }}
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -104,6 +118,13 @@ function logout() {
           @click="addModalOpen = true"
         >
           ＋ 新增漫畫
+        </button>
+        <button
+          type="button"
+          class="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-[13px] font-medium text-neutral-700 transition hover:bg-neutral-50"
+          @click="wishlistModalOpen = true"
+        >
+          ＋ 別人推薦的新增
         </button>
         <button
           type="button"
@@ -192,6 +213,7 @@ function logout() {
     </div>
 
     <template v-else>
+      <!-- 主 grid:我的漫畫(不含想看) -->
       <div
         v-if="visibleMangas.length > 0"
         class="grid gap-3"
@@ -211,12 +233,45 @@ function logout() {
         </p>
         <p v-else class="text-sm text-neutral-500">這個篩選條件下沒有漫畫。</p>
       </div>
+
+      <!-- 他人推薦 block -->
+      <section class="mt-10">
+        <div class="mb-4 flex items-center gap-3 border-t border-neutral-200 pt-6">
+          <h2 class="m-0 text-lg font-semibold text-neutral-900">他人推薦</h2>
+          <span class="text-[13px] text-neutral-500">{{ wishlistMangas.length }} 部</span>
+        </div>
+
+        <div
+          v-if="wishlistMangas.length > 0"
+          class="grid gap-3"
+          style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))"
+        >
+          <MangaCard v-for="manga in wishlistMangas" :key="manga.id" :manga="manga" />
+        </div>
+        <div
+          v-else
+          class="rounded-lg border border-dashed border-neutral-300 bg-white px-6 py-12 text-center"
+        >
+          <p v-if="normalizedQuery !== ''" class="text-sm text-neutral-500">
+            沒有符合「{{ searchQuery.trim() }}」的推薦。
+          </p>
+          <p v-else class="text-sm text-neutral-500">
+            還沒有別人推薦的漫畫,點右上「＋ 別人推薦的新增」記錄。
+          </p>
+        </div>
+      </section>
     </template>
 
     <AddMangaModal
       :open="addModalOpen"
       @close="addModalOpen = false"
       @added="addModalOpen = false"
+    />
+    <AddMangaModal
+      :open="wishlistModalOpen"
+      lock-status="plan-to-read"
+      @close="wishlistModalOpen = false"
+      @added="wishlistModalOpen = false"
     />
 
     <AppToast :message="lastError" variant="error" @dismiss="store.clearError()" />

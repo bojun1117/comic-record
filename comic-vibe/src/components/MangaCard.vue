@@ -18,6 +18,7 @@ const store = useMangaStore()
 
 const isCompleted = computed(() => props.manga.status === 'completed')
 const isDropped = computed(() => props.manga.status === 'dropped')
+const isPlanToRead = computed(() => props.manga.status === 'plan-to-read')
 
 const relativeTime = computed(() => formatRelativeTime(props.manga.lastReadAt))
 
@@ -71,7 +72,7 @@ async function confirmDelete() {
       </div>
     </div>
 
-    <!-- 中段 -->
+    <!-- 中段:completed 顯示評分;plan-to-read 不顯示中段;其他顯示卷/話 -->
     <template v-if="isCompleted">
       <div class="mb-2.5 flex min-h-[56px] flex-col items-start justify-center gap-1">
         <span class="text-xs text-neutral-500">推薦指數</span>
@@ -79,7 +80,7 @@ async function confirmDelete() {
       </div>
     </template>
 
-    <template v-else>
+    <template v-else-if="!isPlanToRead">
       <div class="mb-2.5 flex min-h-[56px] flex-col gap-1.5">
         <div class="flex items-center gap-2 text-[13px]">
           <span class="w-7 text-neutral-500">卷</span>
