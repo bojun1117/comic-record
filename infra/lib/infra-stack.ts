@@ -25,6 +25,14 @@ export class ComicVibeStack extends Stack {
 
     const { stage } = props
 
+    // CORS allowlist。需要前端能打到的 origin 都列在這。
+    // 本機 dev 用 localhost:5173;部署到 GitHub Pages 用 https://<user>.github.io
+    // 注意:GitHub Pages origin 不含子路徑(/comic-record/)
+    const corsAllowedOrigins = [
+      'http://localhost:5173',
+      'https://bojun1117.github.io',
+    ]
+
     // SSM parameter 名稱(值由 AWS CLI 手動建立,見 INFRA.md)
     const passwordParamName = `/comic-vibe/${stage}/app-password`
     const jwtSecretParamName = `/comic-vibe/${stage}/jwt-secret`
@@ -62,6 +70,8 @@ export class ComicVibeStack extends Stack {
         TABLE_NAME: table.tableName,
         // 只傳 parameter 名稱(普通字串),Lambda 自己呼 SSM 拿值
         JWT_SECRET_PARAM: jwtSecretParamName,
+        // CORS allowlist 給 Lambda 動態 echo Origin
+        ALLOWED_ORIGINS: corsAllowedOrigins.join(','),
         NODE_OPTIONS: '--enable-source-maps',
       },
       bundling: {
@@ -150,7 +160,7 @@ export class ComicVibeStack extends Stack {
         throttlingBurstLimit: 100,
       },
       defaultCorsPreflightOptions: {
-        allowOrigins: apigw.Cors.ALL_ORIGINS,
+        allowOrigins: corsAllowedOrigins,
         allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
         allowHeaders: ['Content-Type', 'Authorization'],
       },

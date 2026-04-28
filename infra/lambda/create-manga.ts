@@ -17,7 +17,7 @@ export const handler = requireAuth(async (event, auth) => {
     try {
       body = parseJsonBody(event.body)
     } catch {
-      return malformedJson()
+      return malformedJson(event)
     }
 
     const input = validateCreateInput(body)
@@ -32,11 +32,11 @@ export const handler = requireAuth(async (event, auth) => {
     }
 
     await putManga(manga, auth.sub)
-    return created(manga)
+    return created(manga, event)
   } catch (err) {
     if (err instanceof ValidationError) {
-      return validationError(err.message, err.details)
+      return validationError(err.message, err.details, event)
     }
-    return internalError(err)
+    return internalError(err, event)
   }
 })

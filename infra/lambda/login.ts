@@ -27,34 +27,38 @@ export const handler: APIGatewayProxyHandler = async (event) => {
     const passwordParam = process.env.APP_PASSWORD_PARAM
     if (!passwordParam) {
       console.error('APP_PASSWORD_PARAM env var not set')
-      return internalError(new Error('server misconfigured'))
+      return internalError(new Error('server misconfigured'), event)
     }
 
     let body: unknown
     try {
       body = parseJsonBody(event.body)
     } catch {
-      return malformedJson()
+      return malformedJson(event)
     }
 
     if (typeof body !== 'object' || body === null) {
-      return validationError('request body must be a JSON object')
+      return validationError('request body must be a JSON object', undefined, event)
     }
     const { password } = body as Record<string, unknown>
 
     if (typeof password !== 'string') {
-      return validationError('password is required and must be a string', { field: 'password' })
+      return validationError(
+        'password is required and must be a string',
+        { field: 'password' },
+        event,
+      )
     }
 
     const expectedPassword = await getSecret(passwordParam)
 
     if (!safeEqual(password, expectedPassword)) {
-      return unauthorized('invalid password')
+      return unauthorized('invalid password', event)
     }
 
     const token = await signToken(FIXED_USER_ID)
-    return ok({ token })
+    return ok({ token }, event)
   } catch (err) {
-    return internalError(err)
+    return internalError(err, event)
   }
 }
