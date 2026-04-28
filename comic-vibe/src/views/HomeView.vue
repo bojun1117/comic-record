@@ -124,7 +124,7 @@ function logout() {
           class="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-[13px] font-medium text-neutral-700 transition hover:bg-neutral-50"
           @click="wishlistModalOpen = true"
         >
-          ＋ 別人推薦的新增
+          ＋ 別人推薦
         </button>
         <button
           type="button"
@@ -256,7 +256,7 @@ function logout() {
             沒有符合「{{ searchQuery.trim() }}」的推薦。
           </p>
           <p v-else class="text-sm text-neutral-500">
-            還沒有別人推薦的漫畫,點右上「＋ 別人推薦的新增」記錄。
+            還沒有別人推薦的漫畫,點右上「＋ 別人推薦」記錄。
           </p>
         </div>
       </section>
