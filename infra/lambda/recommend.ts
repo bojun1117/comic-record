@@ -1,6 +1,5 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime'
 import { internalError, ok, validationError } from './shared/http'
-import { PRESETS, isPresetId } from './shared/presets'
 import { requireAuth } from './shared/require-auth'
 
 // Bedrock 上的 Claude Haiku 4.5。
@@ -9,12 +8,14 @@ import { requireAuth } from './shared/require-auth'
 const MODEL_ID = process.env.MODEL_ID ?? 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
 const REGION = process.env.AWS_REGION ?? 'us-east-1'
 
+const PROMPT_MAX_LEN = 200
+
 const client = new BedrockRuntimeClient({ region: REGION })
 
 const SYSTEM_PROMPT = `你是漫畫推薦助手。
 
 規則:
-- 只回應與漫畫推薦有關的請求,其他話題回空陣列
+- 只回應與漫畫推薦有關的請求。如果使用者問非漫畫相關內容(食譜、新聞、程式...),回 {"recommendations": []}
 - 必須以有效 JSON 格式回應:{"recommendations": ["書名1", "書名2", "書名3", "書名4", "書名5"]}
 - 不加任何解釋、前言、結尾文字、markdown code fence
 - 書名優先用中文官方譯名,若無則用日文原文
@@ -22,7 +23,7 @@ const SYSTEM_PROMPT = `你是漫畫推薦助手。
 - 若使用者列出「不要推薦」清單,絕對避開那些作品`
 
 interface RequestBody {
-  presetId?: unknown
+  prompt?: unknown
   exclude?: unknown
 }
 
@@ -35,10 +36,15 @@ export const handler = requireAuth(async (event) => {
     return validationError('malformed JSON', undefined, event)
   }
 
-  if (!isPresetId(body.presetId)) {
+  // 自由文字 prompt:trim 後 1-200 字元
+  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+  if (!prompt) {
+    return validationError('prompt is required', { field: 'prompt' }, event)
+  }
+  if (prompt.length > PROMPT_MAX_LEN) {
     return validationError(
-      `presetId must be one of: ${Object.keys(PRESETS).join(', ')}`,
-      { field: 'presetId' },
+      `prompt must be at most ${PROMPT_MAX_LEN} characters`,
+      { field: 'prompt' },
       event,
     )
   }
@@ -49,11 +55,10 @@ export const handler = requireAuth(async (event) => {
     : []
 
   // ── 組 user prompt ──
-  const basePrompt = PRESETS[body.presetId]
   const userPrompt =
     exclude.length > 0
-      ? `${basePrompt}\n\n請避開以下已經推薦過的作品:\n${exclude.map((t) => `- ${t}`).join('\n')}`
-      : basePrompt
+      ? `${prompt}\n\n請避開以下已經推薦過的作品:\n${exclude.map((t) => `- ${t}`).join('\n')}`
+      : prompt
 
   // ── 呼 Bedrock ──
   try {
