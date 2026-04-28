@@ -141,11 +141,15 @@ export class ComicVibeStack extends Stack {
     passwordParam.grantRead(loginFn)
 
     // Bedrock 權限:只給 recommend Lambda,只允許 InvokeModel
+    // Anthropic 模型強制走 cross-region inference profile,所以要同時放行:
+    //   1. inference profile 本身(us.* 開頭,在主要呼叫的 region 帳號下)
+    //   2. profile 會 routing 到的所有底層 foundation model(任何 us-* region)
     recommendFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['bedrock:InvokeModel'],
         resources: [
-          `arn:aws:bedrock:${this.region}::foundation-model/anthropic.claude-haiku-4-5-*`,
+          `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/us.anthropic.claude-haiku-4-5-*`,
+          `arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-*`,
         ],
       }),
     )

@@ -3,8 +3,10 @@ import { internalError, ok, validationError } from './shared/http'
 import { PRESETS, isPresetId } from './shared/presets'
 import { requireAuth } from './shared/require-auth'
 
-// Bedrock 上的 Claude Haiku 4.5(可用 env 覆蓋,例如改 Sonnet)
-const MODEL_ID = process.env.MODEL_ID ?? 'anthropic.claude-haiku-4-5-20251001-v1:0'
+// Bedrock 上的 Claude Haiku 4.5。
+// Anthropic 模型不支援 on-demand 直接叫,必須透過 cross-region inference profile,
+// 所以這裡用 us. 前綴的 profile id(在 us-* 區域之間 routing)。
+const MODEL_ID = process.env.MODEL_ID ?? 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
 const REGION = process.env.AWS_REGION ?? 'us-east-1'
 
 const client = new BedrockRuntimeClient({ region: REGION })
