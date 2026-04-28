@@ -1,0 +1,180 @@
+import * as path from 'node:path'
+import {
+  CfnOutput,
+  Duration,
+  RemovalPolicy,
+  Stack,
+  type StackProps,
+} from 'aws-cdk-lib'
+import * as apigw from 'aws-cdk-lib/aws-apigateway'
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
+import * as iam from 'aws-cdk-lib/aws-iam'
+import { Architecture, type IFunction, Runtime } from 'aws-cdk-lib/aws-lambda'
+import { NodejsFunction, type NodejsFunctionProps } from 'aws-cdk-lib/aws-lambda-nodejs'
+import { RetentionDays } from 'aws-cdk-lib/aws-logs'
+import * as ssm from 'aws-cdk-lib/aws-ssm'
+import type { Construct } from 'constructs'
+
+interface ComicVibeStackProps extends StackProps {
+  stage: 'dev' | 'prod'
+}
+
+export class ComicVibeStack extends Stack {
+  constructor(scope: Construct, id: string, props: ComicVibeStackProps) {
+    super(scope, id, props)
+
+    const { stage } = props
+
+    // SSM parameter 名稱(值由 AWS CLI 手動建立,見 INFRA.md)
+    const passwordParamName = `/comic-vibe/${stage}/app-password`
+    const jwtSecretParamName = `/comic-vibe/${stage}/jwt-secret`
+
+    // 取得 SSM parameter 物件,用來授權(只授權,不取值)
+    const passwordParam = ssm.StringParameter.fromSecureStringParameterAttributes(
+      this,
+      'AppPasswordParam',
+      { parameterName: passwordParamName },
+    )
+    const jwtSecretParam = ssm.StringParameter.fromSecureStringParameterAttributes(
+      this,
+      'JwtSecretParam',
+      { parameterName: jwtSecretParamName },
+    )
+
+    // ─── DynamoDB ───────────────────────────────────────
+    const table = new dynamodb.Table(this, 'MangasTable', {
+      tableName: `comic-vibe-mangas-${stage}`,
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: stage === 'prod' ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      pointInTimeRecovery: stage === 'prod',
+    })
+
+    // ─── Lambda 共用設定 ────────────────────────────────
+    const commonLambdaProps: Omit<NodejsFunctionProps, 'entry' | 'functionName'> = {
+      runtime: Runtime.NODEJS_22_X,
+      architecture: Architecture.ARM_64,
+      memorySize: 256,
+      timeout: Duration.seconds(10),
+      logRetention: RetentionDays.ONE_WEEK,
+      environment: {
+        TABLE_NAME: table.tableName,
+        // 只傳 parameter 名稱(普通字串),Lambda 自己呼 SSM 拿值
+        JWT_SECRET_PARAM: jwtSecretParamName,
+        NODE_OPTIONS: '--enable-source-maps',
+      },
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        target: 'node22',
+        format: undefined,
+        // @aws-sdk/* 都是 Lambda runtime 內建,bundle 不用包
+        externalModules: ['@aws-sdk/*'],
+      },
+    }
+
+    const lambdaDir = path.join(__dirname, '..', 'lambda')
+
+    const loginFn = new NodejsFunction(this, 'LoginFn', {
+      ...commonLambdaProps,
+      entry: path.join(lambdaDir, 'login.ts'),
+      functionName: `comic-vibe-login-${stage}`,
+      environment: {
+        ...commonLambdaProps.environment,
+        APP_PASSWORD_PARAM: passwordParamName,
+      },
+    })
+
+    const listFn = new NodejsFunction(this, 'ListMangasFn', {
+      ...commonLambdaProps,
+      entry: path.join(lambdaDir, 'list-mangas.ts'),
+      functionName: `comic-vibe-list-mangas-${stage}`,
+    })
+    const createFn = new NodejsFunction(this, 'CreateMangaFn', {
+      ...commonLambdaProps,
+      entry: path.join(lambdaDir, 'create-manga.ts'),
+      functionName: `comic-vibe-create-manga-${stage}`,
+    })
+    const updateFn = new NodejsFunction(this, 'UpdateMangaFn', {
+      ...commonLambdaProps,
+      entry: path.join(lambdaDir, 'update-manga.ts'),
+      functionName: `comic-vibe-update-manga-${stage}`,
+    })
+    const deleteFn = new NodejsFunction(this, 'DeleteMangaFn', {
+      ...commonLambdaProps,
+      entry: path.join(lambdaDir, 'delete-manga.ts'),
+      functionName: `comic-vibe-delete-manga-${stage}`,
+    })
+
+    // DynamoDB 權限
+    table.grantReadData(listFn)
+    table.grantReadWriteData(createFn)
+    table.grantReadWriteData(updateFn)
+    table.grantReadWriteData(deleteFn)
+
+    // SSM 權限:每個需要 secret 的 Lambda 給對應 parameter 的讀取權
+    const mangaFns: IFunction[] = [listFn, createFn, updateFn, deleteFn]
+    for (const fn of mangaFns) {
+      jwtSecretParam.grantRead(fn)
+    }
+    jwtSecretParam.grantRead(loginFn)
+    passwordParam.grantRead(loginFn)
+
+    // SecureString 解密用的 KMS 權限(預設用 AWS managed key,grantRead 已包含)
+    // 但 fromSecureStringParameterAttributes 不帶 kms decrypt,要顯式加
+    const kmsDecrypt = new iam.PolicyStatement({
+      actions: ['kms:Decrypt'],
+      // 預設 alias 是 alias/aws/ssm,實際 key ARN 由 AWS managed
+      resources: ['*'],
+      conditions: {
+        StringEquals: {
+          'kms:EncryptionContext:PARAMETER_ARN': [
+            `arn:aws:ssm:${this.region}:${this.account}:parameter${passwordParamName}`,
+            `arn:aws:ssm:${this.region}:${this.account}:parameter${jwtSecretParamName}`,
+          ],
+        },
+      },
+    })
+    for (const fn of [...mangaFns, loginFn]) {
+      fn.addToRolePolicy(kmsDecrypt)
+    }
+
+    // ─── API Gateway ────────────────────────────────────
+    const api = new apigw.RestApi(this, 'ComicVibeApi', {
+      restApiName: `comic-vibe-api-${stage}`,
+      description: `Comic Vibe API (${stage})`,
+      deployOptions: {
+        stageName: stage,
+        throttlingRateLimit: 50,
+        throttlingBurstLimit: 100,
+      },
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigw.Cors.ALL_ORIGINS,
+        allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowHeaders: ['Content-Type', 'Authorization'],
+      },
+    })
+
+    const auth = api.root.addResource('auth')
+    const login = auth.addResource('login')
+    login.addMethod('POST', new apigw.LambdaIntegration(loginFn))
+
+    const mangas = api.root.addResource('mangas')
+    mangas.addMethod('GET', new apigw.LambdaIntegration(listFn))
+    mangas.addMethod('POST', new apigw.LambdaIntegration(createFn))
+
+    const mangaById = mangas.addResource('{id}')
+    mangaById.addMethod('PATCH', new apigw.LambdaIntegration(updateFn))
+    mangaById.addMethod('DELETE', new apigw.LambdaIntegration(deleteFn))
+
+    new CfnOutput(this, 'ApiUrl', {
+      value: api.url,
+      description: 'API Gateway base URL',
+    })
+    new CfnOutput(this, 'TableName', {
+      value: table.tableName,
+      description: 'DynamoDB table name',
+    })
+  }
+}
