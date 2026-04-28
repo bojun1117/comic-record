@@ -1,41 +1,107 @@
-# Comic Vibe — Manga Tracker
+# Comic Vibe
 
-個人用的漫畫追蹤工具。記錄每部漫畫看到第幾話 / 第幾卷,以及看完之後的推薦指數。
+> 個人用的漫畫追蹤工具 — 記錄每部漫畫的進度（卷／話）與追完後的推薦指數。
 
-只有自己一個人用,多裝置(電腦、手機)會用,單一密碼登入。
+![Status](https://img.shields.io/badge/status-MVP%20ready-brightgreen)
+![Frontend](https://img.shields.io/badge/frontend-Vue%203%20%2B%20Vite-42b883)
+![Backend](https://img.shields.io/badge/backend-AWS%20Lambda%20%2B%20DynamoDB-ff9900)
+![Auth](https://img.shields.io/badge/auth-JWT%20(HS256)-4b5563)
 
----
-
-## 目前狀態
-
-**階段 4 完成 ✅** — 前端 + AWS 後端 + 密碼登入全部串起來,資料存 DynamoDB,reload 不消失。
-
-| 階段 | 狀態 | 內容 |
-|---|---|---|
-| 階段 1 | ✅ | 純前端 Vue prototype,8 個任務 + 2 個可選任務 |
-| 階段 1.5 | ✅ | 加入分類功能(熱血 / 懸疑 / 冒險 / 愛情 / 其他) |
-| 階段 2 | ✅ | 反推 API contract,產出 `API.md` |
-| 階段 3 | ✅ | AWS CDK 部署:Lambda × 4 + DynamoDB + API Gateway |
-| 階段 4 | ✅ | 前端接上 AWS、加密碼登入(JWT 30 天) |
-| 階段 5 | 未開始 | 部署到 GitHub Pages / Cloudflare Pages,有正式 domain |
+單人使用、多裝置同步（電腦／手機），單一密碼登入。資料存於 AWS DynamoDB，重新整理不會消失。
 
 ---
 
-## 怎麼跑
+## 功能
 
-### 後端(只要部署過一次,之後改 code 才需要重跑)
+- 漫畫卡片列表，支援新增 / 編輯 / 刪除
+- **獨立進度欄位**：卷數與話數可分別記錄
+- 狀態切換：想看 / 追讀中 / 棄追 / 已追完
+- 完成後給 1–5 星評分（與狀態切換為獨立操作）
+- 五大分類：熱血 / 懸疑 / 冒險 / 愛情 / 其他
+- 首頁可同時依「狀態」與「分類」獨立 chip 篩選
+- 單一密碼登入，JWT 30 天有效期
+
+---
+
+## 系統架構
+
+```
+┌──────────────┐      HTTPS       ┌─────────────────┐      ┌───────────┐
+│   Browser    │ ───────────────► │   API Gateway   │ ───► │  Lambda   │
+│  (Vue 3 SPA) │ ◄─────────────── │   (REST, CORS)  │ ◄─── │  Node 22  │
+└──────────────┘    JSON + JWT    └─────────────────┘      └─────┬─────┘
+                                                                  │
+                                                          ┌───────┴────────┐
+                                                          │                │
+                                                    ┌─────▼─────┐   ┌──────▼──────┐
+                                                    │ DynamoDB  │   │ SSM Param   │
+                                                    │  (mangas) │   │  (secrets)  │
+                                                    └───────────┘   └─────────────┘
+```
+
+---
+
+## 技術棧
+
+| 範疇 | 使用技術 |
+|---|---|
+| Frontend | Vue 3 (Composition API)、TypeScript、Vite、Pinia、Vue Router、Tailwind CSS |
+| Backend | AWS Lambda (Node.js 22, ARM64)、API Gateway REST、esbuild |
+| Database | DynamoDB (PAY_PER_REQUEST) |
+| Auth | JWT (HS256) via `jose`、AWS SSM Parameter Store (SecureString) |
+| IaC | AWS CDK v2 (TypeScript) |
+| Tooling | ESLint、Prettier、vue-tsc、vitest |
+
+完整選型理由與排除項目請見 [`docs/TECH_STACK.md`](docs/TECH_STACK.md)。
+
+---
+
+## 專案結構
+
+```
+comic-record/
+├── comic-vibe/        # 前端 SPA (Vue 3 + Vite)
+│   ├── src/
+│   │   ├── api/       # HTTP client 與端點封裝
+│   │   ├── components/
+│   │   ├── stores/    # Pinia stores (auth, manga)
+│   │   ├── views/     # 路由頁面
+│   │   └── router/
+│   └── ...
+├── infra/             # AWS CDK 後端
+│   ├── bin/           # CDK app entry
+│   ├── lib/           # Stack 定義
+│   ├── lambda/        # Lambda handlers + 共用工具
+│   └── test/          # vitest 單元測試
+└── docs/              # 規格與架構文件
+```
+
+---
+
+## 快速開始
+
+### 先決條件
+
+- Node.js 22+
+- AWS CLI 已設定憑證（部署後端用）
+- AWS 帳號已設定 billing alert
+
+### 後端（首次部署）
 
 ```bash
 cd infra
 npm install
+
+# 設定登入密碼與 JWT secret（詳見 docs/INFRA.md）
+aws ssm put-parameter --name "/comic-vibe/dev/app-password" \
+  --value "<your-password>" --type SecureString --region us-east-1
+aws ssm put-parameter --name "/comic-vibe/dev/jwt-secret" \
+  --value "<random-32-bytes>" --type SecureString --region us-east-1
+
 npm run deploy
 ```
 
-第一次部署前要先做兩件事:
-1. AWS 帳號 + CLI 設好(見 `AWS_SETUP.md`)
-2. SSM 設密碼與 JWT secret(見 `INFRA.md` §「部署前必做」)
-
-部署成功後 console 會印出 `ApiUrl`,把它填到前端的 `.env.development`。
+部署完成後，CloudFormation 會輸出 `ApiUrl`，將其填入前端的 `comic-vibe/.env.development`。
 
 ### 前端
 
@@ -45,94 +111,80 @@ npm install
 npm run dev
 ```
 
-打開 `http://localhost:5173/` → 跳登入頁 → 輸入密碼 → 進主頁。
+開啟 `http://localhost:5173/`，使用先前設定的密碼登入。
 
 ---
 
-## 文件導覽
-
-照這個順序看,從「為什麼做」到「怎麼做」到「現在跑了什麼」:
-
-### 規劃層(從 0 開始的 vibe coding 文件)
-
-| 檔案 | 看完知道什麼 |
-|---|---|
-| `SPEC.md` | 這個工具做什麼、不做什麼 |
-| `DATA_MODEL.md` | `Manga` 的 TypeScript interface 與重要規則 |
-| `UI_SPEC.md` | 每個畫面長什麼樣、互動細節 |
-| `TECH_STACK.md` | 為什麼選這些技術、不選那些 |
-| `CONVENTIONS.md` | 寫 code 的規矩(目錄結構、命名、Pinia 設計) |
-
-### 執行層(階段 1 落地過程)
-
-| 檔案 | 看完知道什麼 |
-|---|---|
-| `TASKS.md` | 階段 1 的 10 個任務(已全部完成) |
-| `mockup.html` | UI 視覺參考,直接瀏覽器打開預覽 |
-
-### 後端層(階段 2–4 接後端)
-
-| 檔案 | 看完知道什麼 |
-|---|---|
-| `API.md` | 後端 4 個 mangas endpoint + login endpoint 的完整 contract |
-| `AWS_SETUP.md` | 怎麼開 AWS 帳號、設 CLI、設 billing alert(只看一次) |
-| `infra/INFRA.md` | CDK 部署、cURL 驗收、修改密碼、destroy 怎麼做 |
-| `AUTH.md` | 密碼 / JWT 機制,改密碼方式,旋轉 secret |
-
----
-
-## 最常用的指令速查
+## 常用指令
 
 ```bash
 # 前端開發
 cd comic-vibe && npm run dev
 
-# 部署後端
+# 前端型別檢查與 lint
+cd comic-vibe && npm run type-check && npm run lint
+
+# 後端部署
 cd infra && npm run deploy
 
-# 改密碼(SSM)
+# 後端單元測試
+cd infra && npm test
+
+# 旋轉登入密碼
 aws ssm put-parameter \
   --name "/comic-vibe/dev/app-password" \
-  --value "新密碼" --type SecureString --overwrite \
+  --value "<new-password>" --type SecureString --overwrite \
   --region us-east-1
-cd infra && npm run deploy   # 立刻生效
+cd infra && npm run deploy
 
-# 拆掉所有 AWS 資源(停止計費)
+# 拆除 AWS 資源（停止計費）
 cd infra && npm run destroy
 
-# 看 Lambda 日誌
+# 追蹤 Lambda 日誌
 aws logs tail /aws/lambda/comic-vibe-list-mangas-dev --follow
 ```
 
 ---
 
-## 重要原則
+## 文件索引
 
-- **不自由發揮文件之外的功能** — 想加新功能先寫進 `BACKLOG.md`
-- **不為了一個小功能裝大套件** — 用內建工具(`crypto.randomUUID`、`Intl.RelativeTimeFormat`)
-- **每個任務做完先停** — 跑、看、commit,有問題立刻修不要累積
-- **AWS billing alert 是底線** — 任何超過 $5 / 月會 email,不要拿掉
-
----
-
-## 接下來可以做什麼
-
-可選,做不做都不影響目前已經能用的東西:
-
-- **階段 5**:部署到正式 domain(Cloudflare Pages / GitHub Pages),手機就可以用
-- **加 BACKLOG 裡的功能**:搜尋、匯入匯出、分類就地編輯,先用一陣子再決定哪個最痛
-- **純粹用一段時間**:把現有功能用爽,讓真實使用情境告訴你下一步該做什麼
+| 文件 | 內容 |
+|---|---|
+| [`docs/SPEC.md`](docs/SPEC.md) | 產品範圍：做什麼、不做什麼 |
+| [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) | `Manga` 型別定義與欄位規則 |
+| [`docs/UI_SPEC.md`](docs/UI_SPEC.md) | 畫面與互動細節 |
+| [`docs/TECH_STACK.md`](docs/TECH_STACK.md) | 技術選型與排除項目 |
+| [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) | 目錄結構、命名、Pinia 設計慣例 |
+| [`docs/API.md`](docs/API.md) | REST API 完整 contract |
+| [`docs/AUTH.md`](docs/AUTH.md) | 密碼／JWT 機制與 secret 旋轉 |
+| [`docs/INFRA.md`](docs/INFRA.md) | CDK 部署、驗收與運維 |
+| [`docs/AWS_SETUP.md`](docs/AWS_SETUP.md) | AWS 帳號／CLI／billing alert 初始設定 |
+| [`docs/TASKS.md`](docs/TASKS.md) | 開發階段任務拆解 |
 
 ---
 
-## 給 vibe coding 的提示
+## 開發階段
 
-第一次進到這個 repo 的 AI / 你自己,可以這樣開始:
+| 階段 | 狀態 | 範圍 |
+|---|---|---|
+| 1 | ✅ | 純前端 Vue prototype |
+| 1.5 | ✅ | 加入分類功能 |
+| 2 | ✅ | 反推 API contract |
+| 3 | ✅ | AWS CDK 部署：Lambda + DynamoDB + API Gateway |
+| 4 | ✅ | 前後端串接、密碼登入（JWT 30 天） |
+| 5 | 規劃中 | 部署到正式 domain（Cloudflare Pages / GitHub Pages） |
 
-1. 讀 `README.md`(這份)知道整體狀態
-2. 讀 `SPEC.md`、`DATA_MODEL.md` 知道做什麼
-3. 看你想做什麼:
-   - 改前端 → 看 `UI_SPEC.md`、`CONVENTIONS.md`,改 `comic-vibe/src/`
-   - 改後端 → 看 `API.md`,改 `infra/lambda/`
-   - 加新功能 → 先看 `BACKLOG.md`(如果有)+ 對應 `SPEC.md`
-4. **每做完一段先停下來確認再繼續**,不要連續衝
+---
+
+## 設計原則
+
+- **不裝大套件做小功能** — 採用 `crypto.randomUUID`、`Intl.RelativeTimeFormat` 等內建 API
+- **BACKLOG 優先** — 新功能先寫進 `BACKLOG.md` 再實作，不自由發揮
+- **小步迭代** — 每個任務完成即停下驗證，不累積錯誤
+- **成本可控** — AWS billing alert 為底線，超過 $5/月即告警
+
+---
+
+## License
+
+MIT — 個人專案，僅供參考使用。
