@@ -4,7 +4,14 @@
 export const MANGA_STATUSES = ['plan-to-read', 'reading', 'dropped', 'completed'] as const
 export type MangaStatus = (typeof MANGA_STATUSES)[number]
 
-export const MANGA_CATEGORIES = ['hot-blooded', 'mystery', 'adventure', 'romance', 'other'] as const
+export const MANGA_CATEGORIES = [
+  'hot-blooded',
+  'mystery',
+  'adventure',
+  'romance',
+  'casual',
+  'other',
+] as const
 export type MangaCategory = (typeof MANGA_CATEGORIES)[number]
 
 export interface Manga {

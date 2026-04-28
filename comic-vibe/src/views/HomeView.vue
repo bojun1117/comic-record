@@ -38,6 +38,7 @@ const CATEGORY_FILTERS: ReadonlyArray<{ value: CategoryFilter; label: string }> 
   { value: 'mystery', label: '懸疑' },
   { value: 'adventure', label: '冒險' },
   { value: 'romance', label: '愛情' },
+  { value: 'casual', label: '輕鬆' },
   { value: 'other', label: '其他' },
 ]
 
