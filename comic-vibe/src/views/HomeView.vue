@@ -9,6 +9,7 @@ import MangaCard from '@/components/MangaCard.vue'
 import AddMangaModal from '@/components/AddMangaModal.vue'
 import AppToast from '@/components/AppToast.vue'
 import RecommendBlock from '@/components/RecommendBlock.vue'
+import { normalizeChinese } from '@/utils/chinese'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -50,13 +51,14 @@ const sortedMangas = computed(() =>
   ),
 )
 
-const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase())
+// 搜尋字串走繁簡正規化(轉簡體+小寫),讓「進擊」「进击」共通
+const normalizedQuery = computed(() => normalizeChinese(searchQuery.value.trim()))
 
 // 共用條件:分類 chips + 搜尋,套用到「我的漫畫」與「他人推薦」兩 block
 function matchesSharedFilters(m: { title: string; category: MangaCategory }): boolean {
   const categoryOk = activeCategory.value === 'all' || m.category === activeCategory.value
   const queryOk =
-    normalizedQuery.value === '' || m.title.toLowerCase().includes(normalizedQuery.value)
+    normalizedQuery.value === '' || normalizeChinese(m.title).includes(normalizedQuery.value)
   return categoryOk && queryOk
 }
 
