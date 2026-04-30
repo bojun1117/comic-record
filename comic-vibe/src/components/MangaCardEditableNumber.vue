@@ -12,8 +12,9 @@ const emit = defineEmits<{
 
 const editing = ref(false)
 const inputRef = ref<HTMLInputElement | null>(null)
-// 編輯中的字串值,允許清空
-const draft = ref<string>('')
+// 編輯中的值。v-model 在 type="number" input 上會自動把字串 cast 成 number,
+// 所以 draft 可能是 string('') 或 number。
+const draft = ref<string | number>('')
 // 樂觀更新:UI 立刻反映,失敗時靠這個還原
 const optimisticValue = ref<number | null>(null)
 const useOptimistic = ref(false)
@@ -39,7 +40,9 @@ function cancel() {
 async function commit() {
   if (!editing.value) return
 
-  const trimmed = draft.value.trim()
+  // v-model 在 <input type="number"> 上會把 draft 自動 cast 成 number,
+  // 直接 .trim() 會 TypeError。先 String() 轉成字串再處理。
+  const trimmed = String(draft.value ?? '').trim()
   let next: number | null
 
   if (trimmed === '') {

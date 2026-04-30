@@ -19,8 +19,10 @@ const store = useMangaStore()
 const title = ref('')
 const status = ref<MangaStatus>('plan-to-read')
 const category = ref<MangaCategory>('other')
-const volumeStr = ref('')
-const chapterStr = ref('')
+// v-model 在 type="number" input 上會把字串 cast 成 number,
+// 所以這兩個 ref 實際運行時可能是 string('') 或 number。
+const volumeStr = ref<string | number>('')
+const chapterStr = ref<string | number>('')
 const rating = ref<number | null>(null)
 const submitting = ref(false)
 
@@ -61,8 +63,14 @@ function close() {
   emit('close')
 }
 
-function parseNumberOrNull(s: string): number | null {
-  const t = s.trim()
+// v-model 在 <input type="number"> 上會把值自動轉成 number,空字串保留為 ''。
+// 所以這裡同時要接 string 和 number。
+function parseNumberOrNull(s: unknown): number | null {
+  if (typeof s === 'number') {
+    if (!Number.isFinite(s) || s < 0 || !Number.isInteger(s)) return null
+    return s
+  }
+  const t = String(s ?? '').trim()
   if (t === '') return null
   const n = Number(t)
   if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) return null
