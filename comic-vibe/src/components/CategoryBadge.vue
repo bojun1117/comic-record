@@ -12,6 +12,7 @@ const CATEGORY_LABEL: Record<MangaCategory, string> = {
   adventure: '冒險',
   romance: '愛情',
   casual: '輕鬆',
+  competition: '競技',
   other: '其他',
 }
 
@@ -22,6 +23,7 @@ const CATEGORY_CLASS: Record<MangaCategory, string> = {
   adventure: 'bg-emerald-50 text-emerald-700',
   romance: 'bg-pink-50 text-pink-700',
   casual: 'bg-sky-50 text-sky-700',
+  competition: 'bg-amber-50 text-amber-700',
   other: 'bg-neutral-100 text-neutral-600',
 }
 

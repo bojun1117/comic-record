@@ -10,6 +10,7 @@ export type MangaCategory =
   | 'adventure' // 冒險
   | 'romance' // 愛情
   | 'casual' // 輕鬆
+  | 'competition' // 競技
   | 'other' // 其他
 
 export interface Manga {

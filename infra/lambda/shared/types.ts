@@ -10,6 +10,7 @@ export const MANGA_CATEGORIES = [
   'adventure',
   'romance',
   'casual',
+  'competition',
   'other',
 ] as const
 export type MangaCategory = (typeof MANGA_CATEGORIES)[number]
