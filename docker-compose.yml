@@ -1,0 +1,27 @@
+# 本機開發用:把 server image 跑起來,DynamoDB / Bedrock 直接打雲端 dev 環境。
+# K8s 階段會用獨立 manifests 取代,這個檔只服務「跑 docker compose 開發」。
+#
+# 使用方式:
+#   1. 複製 .env.example 為 .env,填入 JWT_SECRET 跟 APP_PASSWORD
+#      (可從 SSM 撈:`aws ssm get-parameter --name /comic-vibe/dev/jwt-secret --with-decryption ...`)
+#   2. docker compose up --build
+
+services:
+  server:
+    build:
+      context: ./server
+    image: comic-vibe-server:dev
+    container_name: comic-vibe-server
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      ALLOWED_ORIGINS: "http://localhost:5173"
+      TABLE_NAME: "comic-vibe-mangas-dev"
+      AWS_REGION: "us-east-1"
+      JWT_SECRET: "${JWT_SECRET:?set JWT_SECRET in .env}"
+      APP_PASSWORD: "${APP_PASSWORD:?set APP_PASSWORD in .env}"
+    volumes:
+      # 本機 ~/.aws 掛進去當 read-only,讓 AWS SDK 用既有 credential 連 DynamoDB / Bedrock
+      - ${HOME}/.aws:/home/nonroot/.aws:ro
+    restart: unless-stopped

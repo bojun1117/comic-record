@@ -1,13 +1,14 @@
-# AUTH.md — 認證機制(階段 4)
+# AUTH.md — 認證機制
 
-階段 4 加入「單一密碼登入」。本文件說明後端與前端怎麼實作,以及如何修改密碼。
+「單一密碼登入」。本文件說明後端與前端怎麼實作,以及如何修改密碼 / 旋轉 secret。
 
 ## 概念
 
 - 只有一個使用者(你)→ 不需要註冊、不需要 email、不需要密碼重設流程
 - 一個密碼 + JWT。輸入密碼 → 後端發 JWT → 前端帶 JWT 打 API
-- 密碼存 AWS SSM Parameter Store(SecureString)
-- JWT secret 也存 SSM,用 HS256 簽名,30 天過期
+- 密碼存 AWS SSM Parameter Store(SecureString)為 source of truth
+- JWT secret 也存 SSM,HS256 簽名,30 天過期
+- K8s 部署時把 SSM 值複製進 K8s Secret 注入 Pod env(每次部署同步一次)
 - 前端存 `localStorage`(下次開瀏覽器還是登入狀態)
 
 ## 流程
@@ -15,11 +16,9 @@
 ```
 使用者 → 前端 LoginView → POST /auth/login {password}
                           ↓
-                       Lambda LoginFn
+                  Go server(Pod 內讀 env APP_PASSWORD)
                           ↓
-                       從 SSM 取 expectedPassword
-                          ↓
-                       timing-safe 比對
+                       timing-safe 比對(crypto/subtle)
                           ↓
                        對 → 簽 JWT(sub: 'me', 30 天)→ 200 {token}
                        錯 → 401 UNAUTHORIZED
@@ -28,20 +27,31 @@
 之後每次打 /mangas/* 都帶 Authorization: Bearer <token>
 ```
 
-每個 mangas Lambda 用 `requireAuth` wrapper,沒 token / 過期 / 簽章錯 → 401。
+每個 mangas route 由 `RequireAuth` middleware 把關,沒 token / 過期 / 簽章錯 → 401。
 
 ## 修改密碼
 
 ```bash
+# 1. 改 SSM(source of truth)
 aws ssm put-parameter \
   --name "/comic-vibe/dev/app-password" \
   --value "新密碼" \
   --type SecureString \
   --overwrite \
   --region us-east-1
+
+# 2. 同步到 K8s Secret 並重啟 pod
+PWD=$(aws ssm get-parameter --name /comic-vibe/dev/app-password --with-decryption --query Parameter.Value --output text)
+kubectl create secret generic comic-vibe-secrets -n comic-vibe \
+  --from-literal=APP_PASSWORD="$PWD" \
+  --from-literal=JWT_SECRET="$(aws ssm get-parameter --name /comic-vibe/dev/jwt-secret --with-decryption --query Parameter.Value --output text)" \
+  --from-literal=AWS_ACCESS_KEY_ID="$(aws configure get aws_access_key_id)" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="$(aws configure get aws_secret_access_key)" \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl rollout restart deployment/comic-vibe-server -n comic-vibe
 ```
 
-> ⚠️ Lambda 容器有 cache,改完 SSM 後**新密碼**最久要等到舊容器被回收(通常 5–15 分鐘)才會生效。要立刻生效就重新部署:`cd infra && npm run deploy`。
+新密碼立即生效(rolling restart 後新 pod 讀新 env)。
 
 ## 旋轉 JWT secret(讓所有現有 token 失效)
 
@@ -53,8 +63,7 @@ aws ssm put-parameter \
   --overwrite \
   --region us-east-1
 
-# 再重新部署讓 Lambda 立刻拿到新值
-cd infra && npm run deploy
+# 同上,把 K8s Secret 重建 + rollout restart
 ```
 
 換完後所有舊 token 都會 401(因為簽章對不上),所有人(=你)都要重新登入。
@@ -70,7 +79,7 @@ cd infra && npm run deploy
 - 對策:本專案不引入第三方 JS、只用自己控制的 origin
 - UX 收益:關瀏覽器再開不用重新登入,30 天內持續有效
 
-> 替代方案 sessionStorage 比較安全,但每次重開瀏覽器都要登入,單人用太煩。階段 5 部署到正式 domain 後,可考慮改用 httpOnly cookie + CSRF token,屆時 `AUTH.md` 補章節說明。
+> 替代方案 sessionStorage 比較安全,但每次重開瀏覽器都要登入,單人用太煩。日後若部署到正式 domain,可考慮改用 httpOnly cookie + CSRF token。
 
 ## token 失效自動處理
 
@@ -83,9 +92,8 @@ cd infra && npm run deploy
 - JWT secret 旋轉
 - token 被人為清除
 
-## 階段 5 規劃(現在不做,先記)
+## 未來強化(現在不做,先記)
 
 - 改 httpOnly cookie + CSRF token(防 XSS 偷 token)
-- CORS 收緊到正式 domain(現在 `*`)
-- 加 IP allowlist(WAF)防爆破密碼
 - Login 端點加 rate limiting(連續失敗 5 次鎖 15 分鐘)
+- 推到雲端 K8s 後加 ingress 層的 IP allowlist 防爆破密碼

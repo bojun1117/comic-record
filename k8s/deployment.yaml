@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comic-vibe-server
+  namespace: comic-vibe
+  labels:
+    app: comic-vibe-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: comic-vibe-server
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0     # 滾動更新永遠保持服務,不掉流量
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: comic-vibe-server
+    spec:
+      containers:
+        - name: server
+          image: comic-vibe-server:dev
+          imagePullPolicy: IfNotPresent     # kind load 進來的本地 image,不要去 docker hub 拉
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: comic-vibe-config
+            - secretRef:
+                name: comic-vibe-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          # liveness:只檢查 process 沒卡死。失敗 3 次才砍重啟。
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # readiness:檢查 DynamoDB 連得到 + 有權限。
+          # 失敗就把這個 pod 從 service endpoint 拿掉,流量不打進來但 process 不重啟。
+          # 連續 2 次失敗(20s)才下線,避免短暫網路抖動誤判。
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+            successThreshold: 1
