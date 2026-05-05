@@ -8,15 +8,14 @@
 
 ```
 專案根目錄/
-├── web/        # 前端 (Vue 3 + Vite)
-├── server/     # 後端 (Go + Gin)
-├── k8s/        # K8s manifests (kind 本機 cluster)
-└── docs/       # 規劃 / 規格文件(本資料夾)
+├── comic-vibe/              # 前端
+├── infra/                   # 後端 CDK 專案(階段 3 起)
+└── docs/                    # 規劃 / 規格文件(本資料夾)
 ```
 
 ---
 
-## 前端(`web/`)
+## 前端(`comic-vibe/`)
 
 ### 元件規矩
 - 一律 Composition API + `<script setup lang="ts">`
@@ -27,7 +26,7 @@
 ### 目錄結構
 
 ```
-web/src/
+comic-vibe/src/
 ├── App.vue
 ├── main.ts
 ├── router/
@@ -86,40 +85,56 @@ web/src/
 
 ---
 
-## 後端(`server/`)— Go
+## 後端(`infra/`)— 階段 3 起
 
 ### 目錄結構
 
 ```
-server/
-├── cmd/server/main.go      # 進入點:wire config / store / handlers
-├── internal/
-│   ├── auth/jwt.go         # JWT sign / verify(HS256, 30 天)
-│   ├── config/config.go    # env 讀取 + fail-fast 驗證
-│   ├── handler/            # HTTP handlers,一個 endpoint 一支
-│   ├── httpx/responses.go  # JSON response helpers + 錯誤格式
-│   ├── manga/              # types + validation(API.md §9)
-│   ├── middleware/         # CORS / logger / RequireAuth
-│   └── store/              # MangaStore interface + DynamoDB 實作
-├── go.mod
-└── Dockerfile              # multi-stage,distroless 最終 image
+infra/
+├── bin/
+│   └── infra.ts          # CDK app 入口
+├── lib/
+│   └── infra-stack.ts    # 所有 AWS 資源定義
+├── lambda/
+│   ├── shared/
+│   │   ├── types.ts      # 與前端 types/manga.ts 100% 一致
+│   │   ├── http.ts       # response helpers + CORS + 錯誤格式
+│   │   ├── validation.ts # API.md §10 的所有驗證規則
+│   │   ├── db.ts         # DynamoDB CRUD helpers
+│   │   ├── auth.ts       # JWT 簽 / 驗(階段 4)
+│   │   ├── ssm.ts        # 從 SSM 取 secret(階段 4)
+│   │   └── require-auth.ts # JWT middleware(階段 4)
+│   ├── login.ts          # POST /auth/login(階段 4)
+│   ├── list-mangas.ts    # GET /mangas
+│   ├── create-manga.ts   # POST /mangas
+│   ├── update-manga.ts   # PATCH /mangas/{id}
+│   └── delete-manga.ts   # DELETE /mangas/{id}
+├── test/
+│   └── validation.test.ts
+├── package.json
+├── tsconfig.json
+├── cdk.json
+└── INFRA.md
 ```
 
 ### 共用程式碼
-- 業務邏輯放 `internal/`,跨 process 不會被引用
-- `middleware.RequireAuth` 包住需要登入的 routes
-- `store.MangaStore` 是介面,handler 依賴介面不依賴 DynamoDB
+- 共用邏輯抽到 `lambda/shared/`,4 個 mangas handler 都用
+- `requireAuth()` 包住需要登入的 handler
 
 ### 驗證
-- 所有 input 都過 `internal/manga/validation.go`
-- 規則對應 `API.md` §9
-- handler 不散寫驗證邏輯,直接呼 `manga.ValidateCreate / ValidatePatch`
+- 所有 input 都過 `lambda/shared/validation.ts`
+- 規則對應 `API.md` §10
+- 不要在 handler 裡散寫驗證邏輯
 
 ### Secret
-- ❌ 不要把密碼 / JWT secret 寫死在程式碼
-- ✅ 存 AWS SSM Parameter Store(SecureString)為 source of truth
-- ✅ K8s 部署時用 `kubectl create secret` 從 SSM 撈進來注入 Pod env
-- ✅ 本機開發跑 `go run` 時用 export env(README 有完整 snippet)
+- ❌ 不要把密碼 / JWT secret 寫死在程式碼或 CDK
+- ✅ 存 AWS SSM Parameter Store(SecureString)
+- ✅ Lambda 啟動時 `getSecret(paramName)` 動態取,結果在 module 變數 cache
+
+### IAM 權限
+- 最小權限原則:list 只給 read、其他給 readwrite
+- SSM 權限只給對應 parameter
+- KMS decrypt 權限要顯式加(SSM SecureString 用 KMS 加密)
 
 ---
 
