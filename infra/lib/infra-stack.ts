@@ -2,7 +2,6 @@ import * as path from 'node:path'
 import {
   CfnOutput,
   Duration,
-  RemovalPolicy,
   Stack,
   type StackProps,
 } from 'aws-cdk-lib'
@@ -50,14 +49,14 @@ export class ComicVibeStack extends Stack {
     )
 
     // ─── DynamoDB ───────────────────────────────────────
-    const table = new dynamodb.Table(this, 'MangasTable', {
-      tableName: `comic-vibe-mangas-${stage}`,
-      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'id', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      removalPolicy: stage === 'prod' ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
-      pointInTimeRecovery: stage === 'prod',
-    })
+    // Table 由 AWS 帳號既有,不由 CDK 建立或管理 lifecycle。
+    // 之前 cdk destroy 把 stack 砍掉時 table 被保留(資料還在),為避免重建撞名,
+    // 改用 fromTableName 引用。schema/PITR/removalPolicy 變更需手動或另起 stack。
+    const table = dynamodb.Table.fromTableName(
+      this,
+      'MangasTable',
+      `comic-vibe-mangas-${stage}`,
+    )
 
     // ─── Lambda 共用設定 ────────────────────────────────
     const commonLambdaProps: Omit<NodejsFunctionProps, 'entry' | 'functionName'> = {
